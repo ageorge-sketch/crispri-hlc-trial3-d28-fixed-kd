@@ -2226,17 +2226,12 @@ def _(
     STRAT_ARM_CFGS,
     arm1_content_base,
     arm2_content_base,
-    arm2_reagent_section,
     arm3_content_base,
     build_arm_with_strat,
-    mo,
 ):
     _cfg_by_label = {c["arm_label"]: c for c in STRAT_ARM_CFGS}
     arm1_content = build_arm_with_strat(_cfg_by_label["WTC11 transient B2M-GFP virus"], arm1_content_base)
-    arm2_content = mo.vstack([
-        arm2_reagent_section,
-        build_arm_with_strat(_cfg_by_label["17_3 stably-integrated guide + AA239 effector (two-component)"], arm2_content_base),
-    ])
+    arm2_content = build_arm_with_strat(_cfg_by_label["17_3 stably-integrated guide + AA239 effector (two-component)"], arm2_content_base)
     arm3_content = build_arm_with_strat(_cfg_by_label["17_3 fully-transient two-virus (guide + AA239 effector)"], arm3_content_base)
     return arm1_content, arm2_content, arm3_content
 
