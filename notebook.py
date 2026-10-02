@@ -44,7 +44,7 @@ def arms_overview(mo, pd):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     # CRISPRi HLC Trial3 D28 (fixed) -- B2M knockdown analysis
@@ -2225,7 +2225,7 @@ def _(
     return arm1_content, arm2_content, arm3_content
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(debris_slider, doublet_slider, mo, np, pd, raw_wells, ssc_cap_slider):
     _COMP_CHANNELS = ["FITC-A", "APC-A", "BV421-A", "B610-ECD-A"]
     _SINGLE_STAIN_WELLS = {"FITC-A": "A6", "APC-A": "E6", "BV421-A": "E7", "B610-ECD-A": "E9"}
@@ -2360,7 +2360,7 @@ def _(debris_slider, doublet_slider, mo, np, pd, raw_wells, ssc_cap_slider):
     return SINGLET_RATIO_BAND, compensate, gating_hierarchy_table
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     ssc_cap_slider = mo.ui.slider(
         start=1_000_000, stop=30_000_000, step=250_000, value=9_500_000,
@@ -2371,7 +2371,7 @@ def _(mo):
     return (ssc_cap_slider,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     debris_slider,
     doublet_slider,
