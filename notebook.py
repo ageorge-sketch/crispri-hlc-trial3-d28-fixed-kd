@@ -1,14 +1,47 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
+#     "marimo>=0.25.1",
+#     "numpy==2.5.3",
+#     "pandas==3.0.6",
+#     "plotly==7.1.0",
+#     "requests==2.34.2",
 #     "xlrd==2.0.2",
 # ]
 # ///
 
 import marimo
 
-__generated_with = "0.24.0"
+__generated_with = "0.25.1"
 app = marimo.App(width="medium", auto_download=["html"])
+
+
+@app.cell(hide_code=True)
+def arms_overview(mo, pd):
+    _arms_overview_df = pd.DataFrame([
+        {
+            "Arm": "1", "Construct / cell line": "WTC11, transient B2M-GFP virus (guide+marker, single virus)",
+            "Guide type": "NT-GFP vs B2M-GFP (dox-inducible CRISPRi effector)",
+            "Key comparison": "B2M-GFP +dox vs NT-GFP control (+dox vs no-dox split)",
+        },
+        {
+            "Arm": "2", "Construct / cell line": "17_3, stably-integrated guide + AA239 transient effector virus",
+            "Guide type": "NT-GFP vs B2M-GFP (integrated); Thy1.1-APC-confirmed effector",
+            "Key comparison": "B2M-GFP vs NT-GFP, both GFP+/Thy1.1+; 3 transduction reagents compared",
+        },
+        {
+            "Arm": "3", "Construct / cell line": "17_3, fully-transient two-virus (guide + AA239 effector)",
+            "Guide type": "NT-GFP vs B2M-GFP (transient); Thy1.1-APC-confirmed effector",
+            "Key comparison": "B2M-GFP vs NT-GFP, both GFP+/Thy1.1+ (n=2 wells/group)",
+        },
+    ])
+    arms_overview_table = mo.ui.table(_arms_overview_df, selection=None)
+    mo.vstack([
+        mo.md("### Experimental arms at a glance"),
+        arms_overview_table,
+    ])
+
+    return
 
 
 @app.cell
@@ -134,11 +167,191 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(arm1_content, arm2_content, arm3_content, mo):
+def infection_gating_tab(
+    arm2_reagent_section,
+    biexp,
+    biexp_ticks,
+    channel_cofactor,
+    debris_gate,
+    gated_range,
+    go,
+    infection_gate_widgets,
+    interactive_hist,
+    mo,
+    np,
+    pd,
+    plot_overview,
+    plot_result,
+    replicate_labels,
+    scatter_gate,
+):
+    def _infection_arm_panel(arm_name, groups, naive_well, marker_channels, plot_start):
+        """marker_channels: list of (channel, gate, display_name). Mirrors
+        build_arm's layout (histogram + scatter + per-replicate bar, pooled by
+        group, never pooled across replicates/groups) but for the raw
+        guide/effector-marker channel itself (infection status), not the
+        downstream knockdown readout."""
+        blocks = []
+        plot_n = plot_start
+        for channel, gate, display_name in marker_channels:
+            naive_vals = debris_gate(naive_well)[channel].values
+            hist_traces, scatter_traces = {}, {}
+            bar_rows = []
+            rl = {}
+            for label, wells, _ in groups:
+                rl.update(replicate_labels(wells, group_label=label))
+                xs_h, xs_s, ys_s = [], [], []
+                for w in wells:
+                    d = debris_gate(w)
+                    n = len(d)
+                    if n:
+                        xs_h.append(d[channel].values)
+                        xs_s.append(d[channel].values)
+                        ys_s.append(d["SSC-A"].values)
+                    pct = 100 * float(np.mean(d[channel].values > gate)) if n else np.nan
+                    bar_rows.append({"well": w, "label": label, "n": n, "pct": pct})
+                if xs_h:
+                    hist_traces[label] = np.concatenate(xs_h)
+                    scatter_traces[label] = (np.concatenate(xs_s), np.concatenate(ys_s))
+
+            pooled_vals = np.concatenate(list(hist_traces.values())) if hist_traces else np.array([])
+            xr = gated_range(naive_vals, pooled_vals, hi_pct=99.0)
+            cofactor = channel_cofactor(channel, naive_vals)
+
+            def _tx(v):
+                return biexp(v, cofactor)
+
+            naive_vals_t = _tx(naive_vals)
+            xr_t = (float(_tx(xr[0])), float(_tx(xr[1])))
+            gate_t = float(_tx(gate))
+            hist_traces_t = {"unstained/FMO reference": naive_vals_t}
+            hist_traces_t.update({k: _tx(v) for k, v in hist_traces.items()})
+            scatter_traces_t = {k: (_tx(xv), yv) for k, (xv, yv) in scatter_traces.items()}
+
+            fig_hist = interactive_hist(
+                hist_traces_t, gate_t, f"{display_name} gate = {gate:,.0f}", xr_t,
+                f"Plot {plot_n}. {arm_name}: {display_name} ({channel}) infection-marker distribution",
+            )
+            fig_scatter = scatter_gate(
+                scatter_traces_t, xr_t,
+                f"Plot {plot_n + 1}. {arm_name}: {display_name} ({channel}) vs SSC-A", y_chan="SSC-A",
+                gate=gate_t, gate_label=f"{display_name} gate",
+            )
+            tickvals, ticktext = biexp_ticks(xr[0], xr[1], cofactor)
+            for f in (fig_hist, fig_scatter):
+                f.update_layout(xaxis=dict(tickvals=tickvals, ticktext=ticktext, title=f"{channel} (biexponential scale)"))
+
+            bar_df = pd.DataFrame(bar_rows)
+            colors_map = {g[0]: c for g, c in zip(groups, ["#4C78A8", "#E45756", "#54A24B", "#F58518"])}
+            bar_fig = go.Figure()
+            bar_fig.add_trace(go.Bar(
+                x=[rl.get(w, w) for w in bar_df["well"]], y=bar_df["pct"],
+                text=[f"{v:.1f}%<br>(n={n:,})" for v, n in zip(bar_df["pct"], bar_df["n"])],
+                textposition="outside",
+                marker_color=[colors_map.get(l, "#999") for l in bar_df["label"]],
+            ))
+            bar_fig.update_layout(
+                title=f"Plot {plot_n + 2}. {arm_name}: % {display_name}+ per replicate (gate={gate:,.0f})",
+                yaxis_title=f"% {display_name}+", yaxis_range=[0, 115], height=380, margin=dict(t=60),
+            )
+
+            _overall_pct = 100 * float(np.average(bar_df["pct"], weights=bar_df["n"])) if bar_df["n"].sum() else float("nan")
+
+            blocks.append(plot_overview(
+                plot_n, f"{arm_name}: {display_name} ({channel}) infection-marker distribution",
+                why=f"States whether cells in {arm_name} were successfully transduced/marked for {display_name}, the gate that feeds this arm's knockdown analysis.",
+                how=(
+                    f"{channel} values (debris/doublet/singlet-gated, compensated) are pooled across "
+                    f"replicate wells within each condition group and plotted as peak-normalized "
+                    f"histograms, with an unstained or FMO reference overlaid."
+                ),
+                how_to_read="Same layout as the gate-calibration histograms above: biexponential x-axis, % of each group's peak count on the y-axis, dashed red line is the gate.",
+            ))
+            blocks.append(fig_hist)
+            blocks.append(plot_overview(
+                plot_n + 1, f"{arm_name}: {display_name} ({channel}) vs SSC-A",
+                why="Checks the infection-marker-positive population as a distinct group in 2D against granularity (SSC-A).",
+                how="A fixed-seed random subsample of the same gated, compensated events is plotted as a scatter (never pooled across groups).",
+                how_to_read="Same x-axis as the histogram above; the dashed red line marks the same gate.",
+            ))
+            blocks.append(fig_scatter)
+            blocks.append(plot_overview(
+                plot_n + 2, f"{arm_name}: % {display_name}+ per replicate",
+                why=f"States the {display_name} infection/transduction rate for {arm_name} directly, per replicate well.",
+                how=f"For each well, % of gated cells above the {display_name} gate is computed.",
+                how_to_read="Each bar is one replicate well; n (gated cell count) is printed above each bar.",
+            ))
+            blocks.append(bar_fig)
+            blocks.append(plot_result(f"Overall {display_name}+ rate in {arm_name}: {_overall_pct:.1f}% (n-weighted across replicate wells)."))
+            plot_n += 3
+
+        return mo.vstack(blocks), plot_n
+
+    _arm1_infect_panel, _n1 = _infection_arm_panel(
+        "Arm 1 (WTC11 transient B2M-GFP virus)",
+        [("NT-GFP (control)", ["B1", "B2"], []),
+         ("B2M-GFP (guide), no dox", ["B3", "B4"], []),
+         ("B2M-GFP (guide), +dox", ["B5", "B6"], [])],
+        naive_well="A3",
+        marker_channels=[("FITC-A", infection_gate_widgets.value["FITC-A__A3"], "GFP (guide)")],
+        plot_start=42,
+    )
+    _arm2_infect_panel, _n2 = _infection_arm_panel(
+        "Arm 2 (17_3 stably-integrated guide + AA239 effector)",
+        [("NT-GFP (control)", ["C1", "C2", "C5", "C6", "D1", "D2"], []),
+         ("B2M-GFP (guide)", ["C3", "C4", "C7", "C8", "D3", "D4"], [])],
+        naive_well="A7",
+        marker_channels=[
+            ("FITC-A", infection_gate_widgets.value["FITC-A__A7"], "GFP (guide)"),
+            ("APC-A", infection_gate_widgets.value["APC-A__D11_fmo"], "Thy1.1-APC (effector)"),
+        ],
+        plot_start=_n1,
+    )
+    _arm3_infect_panel, _n3 = _infection_arm_panel(
+        "Arm 3 (17_3 fully-transient two-virus)",
+        [("NT-GFP (control)", ["D7", "D8"], []),
+         ("B2M-GFP (guide)", ["D9", "D10"], [])],
+        naive_well="A7",
+        marker_channels=[
+            ("FITC-A", infection_gate_widgets.value["FITC-A__A7"], "GFP (guide)"),
+            ("APC-A", infection_gate_widgets.value["APC-A__D11_fmo"], "Thy1.1-APC (effector)"),
+        ],
+        plot_start=_n2,
+    )
+
+    infection_gating_tab_content = mo.vstack([
+        mo.md(
+            "## Infection/transduction gating, by arm\n"
+            "Guide- and effector-marker-positive rates (the gates that feed each "
+            "arm's knockdown analysis), shown independently per arm and condition "
+            "group -- replicate wells are pooled within a group but never across "
+            "groups or arms. See the gate-calibration tab above for how each "
+            "channel's threshold was set."
+        ),
+        mo.ui.tabs({
+            "Arm 1": _arm1_infect_panel,
+            "Arm 2 (+ reagent comparison)": mo.vstack([arm2_reagent_section, _arm2_infect_panel]),
+            "Arm 3": _arm3_infect_panel,
+        }),
+    ])
+    infection_gating_tab_content
+
+    return (infection_gating_tab_content,)
+
+
+@app.cell(hide_code=True)
+def _(
+    arm1_content,
+    arm2_content,
+    arm3_content,
+    infection_gating_tab_content,
+    mo,
+):
     mo.ui.tabs({
         "1. WTC11 transient B2M-GFP virus": arm1_content,
         "2. 17_3 stably-integrated guide + AA239 effector": arm2_content,
         "3. 17_3 fully-transient two-virus + AA239 effector": arm3_content,
+        "Infection gating": infection_gating_tab_content,
     })
     return
 
@@ -976,8 +1189,9 @@ def _(
         gate2=None, gate2_label: str = "", gate2_color: str = "purple",
     ):
         """traces is keyed by group label (replicate wells already pooled by the
-        caller); each group is drawn as a density contour (one color per group,
-        lines only, no fill) so overlapping groups stay readable."""
+        caller); each group is drawn as a plain scatter of a fixed-seed random
+        subsample of its events (never a density/contour plot), using the same
+        x-axis range/transform as the paired histogram for direct comparison."""
         fig = go.Figure()
         colors = ["#4C78A8", "#E45756", "#54A24B", "#F58518", "#B279A2", "#72B7B2"]
         rng = np.random.default_rng(seed)
@@ -985,15 +1199,16 @@ def _(
         y_max = float(np.percentile(all_y, 99.5)) if len(all_y) else None
         for i, (label, (xv, yv)) in enumerate(traces.items()):
             xv = np.asarray(xv); yv = np.asarray(yv)
-            if len(xv) > n_show:
-                idx = rng.choice(len(xv), n_show, replace=False)
-                xv, yv = xv[idx], yv[idx]
+            n_total = len(xv)
+            if n_total > n_show:
+                idx = rng.choice(n_total, n_show, replace=False)
+                xv_plot, yv_plot = xv[idx], yv[idx]
+            else:
+                xv_plot, yv_plot = xv, yv
             color = colors[i % len(colors)]
-            fig.add_trace(go.Histogram2dContour(
-                x=xv, y=yv, name=f"{label} (n={len(xv):,})",
-                ncontours=12, contours=dict(coloring="lines", showlines=True),
-                line=dict(width=2, color=color), colorscale=[[0, color], [1, color]],
-                showscale=False, showlegend=True,
+            fig.add_trace(go.Scattergl(
+                x=xv_plot, y=yv_plot, mode="markers", name=f"{label} (n={n_total:,})",
+                marker=dict(size=3, opacity=0.35, color=color),
             ))
         if gate is not None:
             add_threshold(fig, gate, gate_label, color="red", y=1.05)
@@ -1007,7 +1222,7 @@ def _(
         if y_max is not None:
             fig.update_layout(yaxis_range=[0, y_max])
         fig.add_annotation(
-            text="downsampled to <=2,000 events/sample for display", x=0, y=-0.18,
+            text=f"downsampled to <={n_show:,} events/group for display", x=0, y=-0.18,
             xref="paper", yref="paper", showarrow=False, font=dict(size=10, color="gray"),
         )
         return fig
@@ -1107,13 +1322,18 @@ def _(
         return out
 
     def plot_overview(n: int, title: str, why: str, how: str, how_to_read: str):
-        """Standard pre-plot overview block: Plot N, then Why/How/How-to-read-it."""
-        return mo.md(
-            f"**Plot {n}. {title}**\n\n"
-            f"*Why:* {why}\n\n"
-            f"*How:* {how}\n\n"
-            f"*How to read it:* {how_to_read}"
-        )
+        """Standard pre-plot overview block: Plot N and the conclusion-oriented
+        "why" are shown directly; the "how" (calculation/gating methodology) and
+        "how to read it" prose are collapsed into a hidden-by-default accordion
+        so the notebook reads as results-first."""
+        return mo.vstack([
+            mo.md(f"**Plot {n}. {title}**\n\n*Why:* {why}"),
+            mo.accordion({
+                "Methodology (how this was computed / how to read it)": mo.md(
+                    f"*How:* {how}\n\n*How to read it:* {how_to_read}"
+                )
+            }),
+        ])
 
     def plot_result(text: str):
         return mo.md(f"*Result:* {text}")
@@ -1123,6 +1343,7 @@ def _(
     def reagent_abbrev(well: str) -> str:
         reagent = sample_sheet.loc[well, "Transduction Reagent"]
         return REAGENT_ABBREV.get(reagent, "")
+
 
     return (
         MIN_CELLS_PER_GATE,
