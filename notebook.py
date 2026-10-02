@@ -287,7 +287,7 @@ def infection_gating_tab(
 
         return mo.vstack(blocks), plot_n
 
-    _arm1_infect_panel, _n1 = _infection_arm_panel(
+    arm1_infect_tab, _n1 = _infection_arm_panel(
         "Arm 1 (WTC11 transient B2M-GFP virus)",
         [("NT-GFP (control)", ["B1", "B2"], []),
          ("B2M-GFP (guide), no dox", ["B3", "B4"], []),
@@ -307,7 +307,8 @@ def infection_gating_tab(
         ],
         plot_start=_n1,
     )
-    _arm3_infect_panel, _n3 = _infection_arm_panel(
+    arm2_infect_tab = mo.vstack([arm2_reagent_section, _arm2_infect_panel])
+    arm3_infect_tab, _n3 = _infection_arm_panel(
         "Arm 3 (17_3 fully-transient two-virus)",
         [("NT-GFP (control)", ["D7", "D8"], []),
          ("B2M-GFP (guide)", ["D9", "D10"], [])],
@@ -319,39 +320,15 @@ def infection_gating_tab(
         plot_start=_n2,
     )
 
-    infection_gating_tab_content = mo.vstack([
-        mo.md(
-            "## Infection/transduction gating, by arm\n"
-            "Guide- and effector-marker-positive rates (the gates that feed each "
-            "arm's knockdown analysis), shown independently per arm and condition "
-            "group -- replicate wells are pooled within a group but never across "
-            "groups or arms. See the gate-calibration tab above for how each "
-            "channel's threshold was set."
-        ),
-        mo.ui.tabs({
-            "Arm 1": _arm1_infect_panel,
-            "Arm 2 (+ reagent comparison)": mo.vstack([arm2_reagent_section, _arm2_infect_panel]),
-            "Arm 3": _arm3_infect_panel,
-        }),
-    ])
-    infection_gating_tab_content
-
-    return (infection_gating_tab_content,)
+    return arm1_infect_tab, arm2_infect_tab, arm3_infect_tab
 
 
 @app.cell(hide_code=True)
-def _(
-    arm1_content,
-    arm2_content,
-    arm3_content,
-    infection_gating_tab_content,
-    mo,
-):
+def _(arm1_content, arm2_content, arm3_content, mo):
     mo.ui.tabs({
         "1. WTC11 transient B2M-GFP virus": arm1_content,
         "2. 17_3 stably-integrated guide + AA239 effector": arm2_content,
         "3. 17_3 fully-transient two-virus + AA239 effector": arm3_content,
-        "Infection gating": infection_gating_tab_content,
     })
     return
 
@@ -636,6 +613,12 @@ def _(
         for cfg in _CALIBRATION_CFGS
     })
 
+    # NOTE: the calibration panel (histograms + sliders) built above is kept as
+    # plumbing only -- infection_gate_widgets.value is still read by build_arm /
+    # the per-arm infection tabs below, but this section is intentionally not
+    # displayed/rendered anymore (infection results now live inside each arm's
+    # own "Infection/guide gating" tab as static, read-only output; no standalone
+    # calibration-panel UI is shown anywhere in the notebook).
     infection_calibration_section = mo.vstack([
         mo.md(
             "## Infection/guide-delivery gate calibration\n"
@@ -650,7 +633,6 @@ def _(
         ),
         infection_calibration_accordion,
     ])
-    infection_calibration_section
     return
 
 
@@ -1404,6 +1386,7 @@ def _(
         plot_start: int = 1,
         show_reagent: bool = False,
         subgroup_labels: dict = None,
+        infection_tab_content=None,
     ):
         """groups: list of (group_label, wells, marker_specs) -- marker_specs is a
         list of (channel, threshold) applied as an AND gate (empty list = no
@@ -1579,10 +1562,13 @@ def _(
         blocks = [mo.md(description)]
         if caveat:
             blocks.append(mo.callout(mo.md(caveat), kind="warn"))
-        blocks.append(mo.ui.tabs({
+        _arm_tabs = {
             "Well metadata": meta_table,
             "Gating hierarchy (counts per step)": gating_hierarchy_table(groups),
-        }))
+        }
+        if infection_tab_content is not None:
+            _arm_tabs["Infection/guide gating"] = infection_tab_content
+        blocks.append(mo.ui.tabs(_arm_tabs))
         blocks.append(_metric_note)
 
         blocks.append(plot_overview(
@@ -1721,7 +1707,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(build_arm, infection_gate_widgets):
+def _(arm1_infect_tab, build_arm, infection_gate_widgets):
     arm1_content_base, arm1_summary = build_arm(
         title="WTC11 transient B2M-GFP virus",
         description=(
@@ -1750,13 +1736,14 @@ def _(build_arm, infection_gate_widgets):
             "groups above reflect this confirmed induction status, not the sheet's "
             "column value, which does not capture the distinction."
         ),
+        infection_tab_content=arm1_infect_tab,
     )
     arm1_content_base
     return arm1_content_base, arm1_summary
 
 
 @app.cell(hide_code=True)
-def _(build_arm, infection_gate_widgets, reagent_abbrev):
+def _(arm2_infect_tab, build_arm, infection_gate_widgets, reagent_abbrev):
     arm2_content_base, arm2_summary = build_arm(
         title="17_3 stably-integrated guide + AA239 effector (two-component)",
         description=(
@@ -1791,13 +1778,14 @@ def _(build_arm, infection_gate_widgets, reagent_abbrev):
             w: reagent_abbrev(w)
             for w in ["C1", "C2", "C5", "C6", "D1", "D2", "C3", "C4", "C7", "C8", "D3", "D4"]
         },
+        infection_tab_content=arm2_infect_tab,
     )
     arm2_content_base
     return arm2_content_base, arm2_summary
 
 
 @app.cell(hide_code=True)
-def _(build_arm, infection_gate_widgets):
+def _(arm3_infect_tab, build_arm, infection_gate_widgets):
     arm3_content_base, arm3_summary = build_arm(
         title="17_3 fully-transient two-virus (guide + AA239 effector)",
         description=(
@@ -1820,6 +1808,7 @@ def _(build_arm, infection_gate_widgets):
         naive_well="A7",
         summary_flag="Only n=2 wells per group -- smaller replicate count than arm 2's n=6.",
         plot_start=22,
+        infection_tab_content=arm3_infect_tab,
     )
     arm3_content_base
     return arm3_content_base, arm3_summary
