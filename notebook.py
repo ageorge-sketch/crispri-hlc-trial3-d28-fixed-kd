@@ -1569,6 +1569,7 @@ def _(
         if infection_tab_content is not None:
             _arm_tabs["Infection/guide gating"] = infection_tab_content
         blocks.append(mo.ui.tabs(_arm_tabs))
+        blocks.append(mo.md(f"## Knockdown: {readout_channel}"))
         blocks.append(_metric_note)
 
         blocks.append(plot_overview(
