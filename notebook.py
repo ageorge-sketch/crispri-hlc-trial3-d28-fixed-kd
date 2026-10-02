@@ -183,6 +183,7 @@ def infection_gating_tab(
     plot_overview,
     plot_result,
     replicate_labels,
+    sample_sheet,
     scatter_gate,
 ):
     def _infection_arm_panel(arm_name, groups, naive_well, marker_channels, plot_start):
@@ -284,6 +285,17 @@ def infection_gating_tab(
             blocks.append(bar_fig)
             blocks.append(plot_result(f"Overall {display_name}+ rate in {arm_name}: {_overall_pct:.1f}% (n-weighted across replicate wells)."))
             plot_n += 3
+
+        if marker_channels and sample_sheet.loc[naive_well, "Cell Line"] != "WTC11":
+            blocks.append(mo.callout(mo.md(
+                "*Caveat: compensation is anchored to WTC11 single-stain controls "
+                "(no single-stain wells exist for this arm's own cell line), so this "
+                "arm's unstained-reference line sits at a different baseline than the "
+                "true compensation zero-point -- cells scattered below it (even below 0) "
+                "reflect that baseline mismatch, not necessarily a gating error. % "
+                "infected is still reliable since the gate is set from this same arm's "
+                "own reference well.*"
+            ), kind="warn"))
 
         return mo.vstack(blocks), plot_n
 
