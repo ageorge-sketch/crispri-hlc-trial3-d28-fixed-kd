@@ -2231,6 +2231,25 @@ def _(debris_slider, doublet_slider, mo, np, pd, raw_wells, ssc_cap_slider):
     _SINGLE_STAIN_WELLS = {"FITC-A": "A6", "APC-A": "E6", "BV421-A": "E7", "B610-ECD-A": "E9"}
     _UNSTAINED_WELL = "A3"
 
+    # Spillover terms excluded below (forced to 0 rather than estimated from the
+    # plate's single-stain wells): BV421-A->FITC-A and APC-A->FITC-A. Both were
+    # derived from well E7 (ASGR1-BV421 single stain), whose own-channel median
+    # across the whole well sits *below* the unstained well -- ASGR1 is a
+    # hepatocyte-differentiation marker and E7 appears to be an early/less-mature
+    # population where it isn't really expressed yet, unlike actual Day 28 HLC
+    # sample wells (which show ASGR1-BV421 medians 5-10x higher). The "positive"
+    # sub-population used to estimate spillover from E7 is real (clearly brighter
+    # BV421 than background), but it's also uniformly brighter across every other
+    # channel (FITC, APC, B610-ECD all elevated together), consistent with a
+    # general autofluorescence/granularity correlation in that subset rather than
+    # true optical bleed-through -- which was driving FITC-A (GFP) compensated
+    # values for the real guide-marker wells (B1-B6) down to ~0 or negative,
+    # well below the unstained reference. No cleaner single-stain well exists on
+    # this plate for either BV421-A or FITC-A (checked all GFP+/antibody-free and
+    # ASGR1-BV421-stained wells), so rather than replacing the reference well,
+    # these two specific cross-terms are excluded from the estimated matrix.
+    _EXCLUDED_SPILLOVER_TERMS = {("BV421-A", "FITC-A"), ("APC-A", "FITC-A")}
+
     def _build_spillover_matrix():
         unstained = raw_wells[_UNSTAINED_WELL]
         baseline = {ch: float(np.median(unstained[ch].values)) for ch in _COMP_CHANNELS}
@@ -2247,6 +2266,8 @@ def _(debris_slider, doublet_slider, mo, np, pd, raw_wells, ssc_cap_slider):
                 continue
             for j, ch_j in enumerate(_COMP_CHANNELS):
                 if j == i:
+                    continue
+                if (ch_i, ch_j) in _EXCLUDED_SPILLOVER_TERMS:
                     continue
                 s[i, j] = (float(np.median(pos[ch_j].values)) - baseline[ch_j]) / denom
         return s
