@@ -17,6 +17,40 @@ app = marimo.App(width="medium", auto_download=["html"])
 
 
 @app.cell(hide_code=True)
+def _(mo):
+    token_input = mo.ui.text(
+        kind="password",
+        label="GCS access token (paste output of `gcloud auth print-access-token`; expires ~1hr, re-paste if you hit 401s)",
+        full_width=True,
+    )
+    token_input
+    return (token_input,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    # CRISPRi HLC Trial3 D28 (fixed) -- B2M knockdown analysis
+
+    This notebook measures B2M knockdown efficiency across three independent arms
+    in fixed cells from HLC Trial 3, Day 28, each arm using a different
+    guide-delivery method and/or cell line. It parses the raw flow cytometry
+    (FCS) files for each well, applies cell and antibody gates, and reports the
+    percentage-point shift in the fraction of cells below a fixed B2M-antibody
+    gate, comparing a non-targeting control guide (NT-GFP) to the B2M-targeting
+    guide (B2M-GFP), within cells confirmed to carry the guide and/or effector
+    virus.
+
+    This dataset targets the B2M gene and includes no CD81 antibody stain. Two
+    well groups are excluded from the knockdown analysis: wells from the K562
+    cell line, used only to check ASGR1-antibody specificity, and two
+    guide-only wells with no effector virus, used only as GFP compensation
+    controls.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
 def arms_overview(mo, pd):
     _arms_overview_df = pd.DataFrame([
         {
@@ -41,29 +75,6 @@ def arms_overview(mo, pd):
         arms_overview_table,
     ])
 
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md("""
-    # CRISPRi HLC Trial3 D28 (fixed) -- B2M knockdown analysis
-
-    This notebook measures B2M knockdown efficiency across three independent arms
-    in fixed cells from HLC Trial 3, Day 28, each arm using a different
-    guide-delivery method and/or cell line. It parses the raw flow cytometry
-    (FCS) files for each well, applies cell and antibody gates, and reports the
-    percentage-point shift in the fraction of cells below a fixed B2M-antibody
-    gate, comparing a non-targeting control guide (NT-GFP) to the B2M-targeting
-    guide (B2M-GFP), within cells confirmed to carry the guide and/or effector
-    virus.
-
-    This dataset targets the B2M gene and includes no CD81 antibody stain. Two
-    well groups are excluded from the knockdown analysis: wells from the K562
-    cell line, used only to check ASGR1-antibody specificity, and two
-    guide-only wells with no effector virus, used only as GFP compensation
-    controls.
-    """)
     return
 
 
@@ -378,7 +389,6 @@ def _(mo, pctile_gate):
         )
         for key, val in _infection_gate_defaults.items()
     })
-    infection_gate_widgets
     return (infection_gate_widgets,)
 
 
@@ -492,7 +502,6 @@ def _(
             + f". {_best_reagent} gives the highest mean effector-delivery rate."
         ),
     ])
-    arm2_reagent_section
     return (arm2_reagent_section,)
 
 
@@ -728,8 +737,7 @@ def _(
         ),
         hepatocyte_marker_tabs,
     ])
-    hepatocyte_marker_section
-    return
+    return (hepatocyte_marker_section,)
 
 
 @app.cell(hide_code=True)
@@ -766,8 +774,7 @@ def _(debris_slider, go, mo, np, plot_overview, plot_result, raw_wells):
         _fig,
         plot_result(f"{_pct_below_debris:.1f}% of all pooled events fall below the current debris gate and are excluded as debris."),
     ])
-    debris_check
-    return
+    return (debris_check,)
 
 
 @app.cell(hide_code=True)
@@ -826,8 +833,7 @@ def _(debris_slider, go, mo, np, plot_overview, raw_wells):
         ),
         _fig_ds,
     ])
-    debris_scatter
-    return
+    return (debris_scatter,)
 
 
 @app.cell(hide_code=True)
@@ -860,8 +866,7 @@ def _(doublet_slider, go, mo, np, plot_overview, plot_result, raw_wells):
         _fig_w,
         plot_result(f"{_pct_above_doublet:.1f}% of all pooled events fall above the current doublet cutoff and are excluded as doublets."),
     ])
-    doublet_check
-    return
+    return (doublet_check,)
 
 
 @app.cell(hide_code=True)
@@ -919,8 +924,7 @@ def _(doublet_slider, go, mo, np, plot_overview, raw_wells):
         ),
         _fig_ws,
     ])
-    doublet_scatter
-    return
+    return (doublet_scatter,)
 
 
 @app.cell(hide_code=True)
@@ -930,7 +934,6 @@ def _(mo):
         label="FSC-A debris/cell gate (events at/below this FSC-A value are excluded as debris)",
         full_width=True, show_value=True,
     )
-    debris_slider
     return (debris_slider,)
 
 
@@ -941,7 +944,6 @@ def _(mo):
         label="FSC-Width doublet/clump cutoff (events above this FSC-Width are excluded as doublets)",
         full_width=True, show_value=True,
     )
-    doublet_slider
     return (doublet_slider,)
 
 
@@ -956,17 +958,6 @@ def _():
     import plotly.graph_objects as go
 
     return go, io, mo, np, pd, requests, urllib
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    token_input = mo.ui.text(
-        kind="password",
-        label="GCS access token (paste output of `gcloud auth print-access-token`; expires ~1hr, re-paste if you hit 401s)",
-        full_width=True,
-    )
-    token_input
-    return (token_input,)
 
 
 @app.cell(hide_code=True)
@@ -1043,7 +1034,6 @@ def _(PREFIX, gcs_get, io, pd):
 
     sample_sheet["Well"] = sample_sheet["Well ID"].apply(_well_key)
     sample_sheet = sample_sheet.set_index("Well", drop=False)
-    sample_sheet
     return (sample_sheet,)
 
 
@@ -1080,8 +1070,8 @@ def _(PREFIX, gcs_get, parse_fcs_bytes):
 
     raw_wells = {w: _load_well(w) for w in WELLS}
     raw_wells.update({name.replace("02-Well-", "H_"): _load_hep_well(name) for name in HEP_WELLS})
-    f"Loaded {len(raw_wells)} wells, {sum(len(d) for d in raw_wells.values()):,} total events"
-    return (raw_wells,)
+    wells_loaded_msg = f"Loaded {len(raw_wells)} wells, {sum(len(d) for d in raw_wells.values()):,} total events"
+    return raw_wells, wells_loaded_msg
 
 
 @app.cell(hide_code=True)
@@ -1765,7 +1755,6 @@ def _(arm1_infect_tab, build_arm, infection_gate_widgets):
         ),
         infection_tab_content=arm1_infect_tab,
     )
-    arm1_content_base
     return arm1_content_base, arm1_summary
 
 
@@ -1807,7 +1796,6 @@ def _(arm2_infect_tab, build_arm, infection_gate_widgets, reagent_abbrev):
         },
         infection_tab_content=arm2_infect_tab,
     )
-    arm2_content_base
     return arm2_content_base, arm2_summary
 
 
@@ -1837,7 +1825,6 @@ def _(arm3_infect_tab, build_arm, infection_gate_widgets):
         plot_start=22,
         infection_tab_content=arm3_infect_tab,
     )
-    arm3_content_base
     return arm3_content_base, arm3_summary
 
 
@@ -1951,7 +1938,6 @@ def _(
         ))
 
     marker_strat_df = pd.DataFrame(_strat_all_rows)
-    marker_strat_df
     return STRAT_ARM_CFGS, marker_strat_df, stratum_filter
 
 
@@ -2252,7 +2238,6 @@ def _(
         build_arm_with_strat(_cfg_by_label["17_3 stably-integrated guide + AA239 effector (two-component)"], arm2_content_base),
     ])
     arm3_content = build_arm_with_strat(_cfg_by_label["17_3 fully-transient two-virus (guide + AA239 effector)"], arm3_content_base)
-    mo.md("Marker-stratified content folded into all 3 arms; Arm 2 also gets a transduction-reagent infection-gating chart at the top of its tab.")
     return arm1_content, arm2_content, arm3_content
 
 
@@ -2398,7 +2383,6 @@ def _(mo):
         label="SSC-A upper cap (events above this SSC-A are excluded; rectangle cell gate with the FSC-A floor above)",
         full_width=True, show_value=True,
     )
-    ssc_cap_slider
     return (ssc_cap_slider,)
 
 
@@ -2461,7 +2445,52 @@ def _(
             "since the flagged swings are mild (25-34%), not sharp jumps."
         ),
     ])
-    time_check
+    return (time_check,)
+
+
+@app.cell(hide_code=True)
+def _(
+    arm1_content_base,
+    arm2_content_base,
+    arm3_content_base,
+    debris_check,
+    debris_scatter,
+    debris_slider,
+    doublet_check,
+    doublet_scatter,
+    doublet_slider,
+    hepatocyte_marker_section,
+    infection_gate_widgets,
+    marker_strat_df,
+    mo,
+    sample_sheet,
+    ssc_cap_slider,
+    time_check,
+    wells_loaded_msg,
+):
+    mo.accordion({
+        "Calibration sliders, QC & raw per-arm views (click to expand -- advanced/debug)": mo.vstack([
+            mo.md("#### Infection/guide-marker gate calibration sliders"),
+            infection_gate_widgets,
+            mo.md("#### Debris gate (FSC-A floor)"),
+            debris_slider, debris_check, debris_scatter,
+            mo.md("#### Doublet gate (FSC-Width ceiling)"),
+            doublet_slider, doublet_check, doublet_scatter,
+            mo.md("#### Cell gate (SSC-A upper cap)"),
+            ssc_cap_slider,
+            mo.md("#### Hepatocyte marker (ASGR1/Albumin) calibration"),
+            hepatocyte_marker_section,
+            mo.md("#### Marker-stratification raw table"),
+            marker_strat_df,
+            mo.md("#### Sample sheet"),
+            sample_sheet,
+            mo.md(f"#### Well loading\n{wells_loaded_msg}"),
+            mo.md("#### Time-acquisition QC"),
+            time_check,
+            mo.md("#### Raw per-arm content (same data as the tabs above, pre-stratification)"),
+            arm1_content_base, arm2_content_base, arm3_content_base,
+        ]),
+    })
     return
 
 
